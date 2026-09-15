@@ -1,0 +1,14 @@
+{
+  "rules": {
+    "course": {
+      "settings": { ".read": true, ".write": "auth != null && auth.token.email == 'diel_zi_nho25@hotmail.com'" },
+      "lessons": { ".read": "auth != null", ".write": "auth != null && auth.token.email == 'diel_zi_nho25@hotmail.com'" },
+      "users": {
+        "$uid": {
+          ".read": "auth != null && (auth.uid == $uid || auth.token.email == 'diel_zi_nho25@hotmail.com')",
+          ".write": "auth != null && (auth.uid == $uid || auth.token.email == 'diel_zi_nho25@hotmail.com')"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name":"curso-da-passada",
+  "version":"11.0.0",
+  "private":true,
+  "scripts":{"start":"node server.js"},
+  "engines":{"node":">=20"},
+  "dependencies":{"express":"^4.21.2","firebase-admin":"^13.0.1"}
+}

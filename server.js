@@ -38,7 +38,7 @@ function externalRef(userId,plan){return `CDP-${plan}-${userId}-${Date.now()}`}
 function checkoutUrl(data){return String(data?.init_point||data?.sandbox_init_point||'').trim()}
 async function getPrice(plan){const s=db();if(!s)throw new Error('Firebase Admin não configurado');const snap=await s.ref('course/settings').once('value');const v=snap.val()||{vipPrice:150,lifePrice:299.99};const price=Number(plan==='vip'?v.vipPrice:v.lifePrice);if(!Number.isFinite(price)||price<=0)throw new Error('Preço do plano inválido');return price}
 async function savePaymentUser(userId,data){const d=db();if(!d)throw new Error('Firebase Admin não configurado');await d.ref('course/users/'+userId).update(data)}
-app.get('/health',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',version:'11.2.0',mercadoPagoConfigured:!!MP_TOKEN,mercadoPagoPublicKeyConfigured:!!MP_PUBLIC_KEY,firebaseConfigured:!!db(),adminEmail:ADMIN_EMAIL}));
+app.get('/health',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',version:'11.2.1',mercadoPagoConfigured:!!MP_TOKEN,mercadoPagoPublicKeyConfigured:!!MP_PUBLIC_KEY,firebaseConfigured:!!db(),adminEmail:ADMIN_EMAIL}));
 app.get('/payments/config',(req,res)=>res.json({publicKey:MP_PUBLIC_KEY}));
 app.post('/payments/create',async(req,res)=>{try{
  if(!MP_TOKEN||!db())return res.status(503).json({message:'Backend ainda não configurado no Render.'});
@@ -51,10 +51,13 @@ app.post('/payments/create',async(req,res)=>{try{
 
 app.post('/payments/process',async(req,res)=>{try{
  if(!MP_TOKEN||!db())return res.status(503).json({message:'Backend ainda não configurado no Render.'});
- const {plan,userId,email,payment}=req.body||{};
+ const {plan,userId,email}=req.body||{};
+ let payment=req.body?.payment||{};
+ // Aceita tanto o formato direto quanto um payload aninhado enviado pelo Brick.
+ if(payment?.formData) payment=payment.formData;
  if(!['vip','life'].includes(plan)||!userId||!email||!payment)return res.status(400).json({message:'Dados do pagamento incompletos.'});
  const price=await getPrice(plan); const ref=externalRef(userId,plan);
- const method=String(payment.payment_method_id||'').toLowerCase();
+ const method=String(payment.payment_method_id||payment.paymentMethodId||'').toLowerCase();
  if(!method)return res.status(400).json({message:'Forma de pagamento não identificada.'});
  const payer={email:String(email).toLowerCase()};
  if(payment.payer?.identification?.type && payment.payer?.identification?.number){payer.identification=payment.payer.identification;}

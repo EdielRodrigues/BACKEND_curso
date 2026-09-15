@@ -34,17 +34,23 @@ const db=()=>admin.apps.length?admin.database():null;
 async function mp(pathname,options={}){if(!MP_TOKEN)throw new Error('MERCADO_PAGO_ACCESS_TOKEN não configurado no Render');const r=await fetch('https://api.mercadopago.com'+pathname,{...options,headers:{'Content-Type':'application/json','Authorization':'Bearer '+MP_TOKEN,...(options.headers||{})}});const text=await r.text();let data;try{data=JSON.parse(text)}catch{data={raw:text}}if(!r.ok){const e=new Error(data.message||data.error||`Mercado Pago HTTP ${r.status}`);e.status=r.status;e.data=data;throw e}return data}
 function appUrl(req){return FRONTEND_URL||`${req.protocol}://${req.get('host')}`}
 function externalRef(userId,plan){return `CDP-${plan}-${userId}-${Date.now()}`}
+function checkoutUrl(data){return String(data?.init_point||data?.sandbox_init_point||'').trim()}
 async function getPrice(plan){const s=db();if(!s)throw new Error('Firebase Admin não configurado');const snap=await s.ref('course/settings').once('value');const v=snap.val()||{vipPrice:150,lifePrice:299.99};const price=Number(plan==='vip'?v.vipPrice:v.lifePrice);if(!Number.isFinite(price)||price<=0)throw new Error('Preço do plano inválido');return price}
 async function savePaymentUser(userId,data){const d=db();if(!d)throw new Error('Firebase Admin não configurado');await d.ref('course/users/'+userId).update(data)}
-app.get('/health',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',version:'11.1.1',mercadoPagoConfigured:!!MP_TOKEN,firebaseConfigured:!!db(),adminEmail:ADMIN_EMAIL}));
+app.get('/health',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',version:'11.1.2',mercadoPagoConfigured:!!MP_TOKEN,firebaseConfigured:!!db(),adminEmail:ADMIN_EMAIL}));
 app.post('/payments/create',async(req,res)=>{try{if(!MP_TOKEN||!db())return res.status(503).json({message:'Backend ainda não configurado no Render.'});const {plan,userId,email}=req.body||{};if(!['vip','life'].includes(plan)||!userId||!email)return res.status(400).json({message:'Dados do pagamento incompletos.'});const price=await getPrice(plan);const ref=externalRef(userId,plan);const base=appUrl(req);
  if(plan==='vip'){
    const sub=await mp('/preapproval',{method:'POST',body:JSON.stringify({reason:'Curso da Passada — Plano VIP',external_reference:ref,payer_email:String(email).toLowerCase(),auto_recurring:{frequency:1,frequency_type:'months',transaction_amount:price,currency_id:'BRL'},back_url:base,status:'pending'})});
    await savePaymentUser(userId,{pendingPlan:'vip',pendingReference:ref,subscriptionId:sub.id});
-   return res.json({checkout_url:sub.init_point,id:sub.id,type:'subscription'});
+   const checkout=checkoutUrl(sub);
+   if(!checkout) throw new Error('Mercado Pago não retornou o link de checkout da assinatura. Verifique as credenciais e o ambiente da conta.');
+   return res.json({checkout_url:checkout,init_point:sub.init_point||null,sandbox_init_point:sub.sandbox_init_point||null,id:sub.id,type:'subscription'});
  }
  const pref=await mp('/checkout/preferences',{method:'POST',body:JSON.stringify({items:[{id:'curso-passada-life',title:'Curso da Passada — Acesso Vitalício',quantity:1,currency_id:'BRL',unit_price:price}],payer:{email:String(email).toLowerCase()},external_reference:ref,notification_url:`${base}/webhooks/mercadopago`,back_urls:{success:base,cancel:base,pending:base},auto_return:'approved'})});
- await savePaymentUser(userId,{pendingPlan:'life',pendingReference:ref});res.json({checkout_url:pref.init_point,id:pref.id,type:'preference'});
+ await savePaymentUser(userId,{pendingPlan:'life',pendingReference:ref});
+ const checkout=checkoutUrl(pref);
+ if(!checkout) throw new Error('Mercado Pago não retornou o link de checkout. Verifique as credenciais e o ambiente da conta.');
+ res.json({checkout_url:checkout,init_point:pref.init_point||null,sandbox_init_point:pref.sandbox_init_point||null,id:pref.id,type:'preference'});
  }catch(e){console.error(e);res.status(e.status||500).json({message:e.message||'Erro ao criar pagamento.'})}});
 async function processPayment(paymentId){const p=await mp('/v1/payments/'+paymentId);const ref=String(p.external_reference||'');const m=ref.match(/^CDP-(vip|life)-(.+?)-\d+$/);if(!m)return {ignored:true,reason:'external_reference não reconhecida'};const plan=m[1],userId=m[2];if(p.status==='approved'){const now=new Date();if(plan==='life'){await savePaymentUser(userId,{plan:'life',expiresAt:null,pendingPlan:null,pendingReference:null,lastPaymentId:String(p.id),lastPaymentStatus:p.status})}else{let until=new Date(now.getTime()+31*86400000);const snap=await db().ref('course/users/'+userId).once('value');const old=snap.val()||{};if(old.expiresAt&&new Date(old.expiresAt)>now)until=new Date(new Date(old.expiresAt).getTime()+31*86400000);await savePaymentUser(userId,{plan:'vip',expiresAt:until.toISOString(),pendingPlan:null,pendingReference:null,lastPaymentId:String(p.id),lastPaymentStatus:p.status})}}
  return {status:p.status,userId,plan};}
@@ -59,6 +65,6 @@ if(fs.existsSync(path.join(publicDir,'index.html'))){
   app.use(express.static(publicDir));
   app.get('*',(req,res)=>res.sendFile(path.join(publicDir,'index.html')));
 }else{
-  app.get('/',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',api:true,version:'11.1.1'}));
+  app.get('/',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',api:true,version:'11.1.2'}));
 }
 app.listen(PORT,()=>console.log(`Curso da Passada rodando na porta ${PORT}`));

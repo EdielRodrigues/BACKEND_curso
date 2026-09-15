@@ -1,6 +1,6 @@
 {
   "name": "curso-da-passada",
-  "version": "11.1.1",
+  "version": "11.2.1",
   "private": true,
   "scripts": {
     "start": "node server.js"

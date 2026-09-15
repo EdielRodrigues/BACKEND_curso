@@ -51,13 +51,10 @@ app.post('/payments/create',async(req,res)=>{try{
 
 app.post('/payments/process',async(req,res)=>{try{
  if(!MP_TOKEN||!db())return res.status(503).json({message:'Backend ainda não configurado no Render.'});
- const {plan,userId,email}=req.body||{};
- let payment=req.body?.payment||{};
- // Aceita tanto o formato direto quanto um payload aninhado enviado pelo Brick.
- if(payment?.formData) payment=payment.formData;
+ const {plan,userId,email,payment}=req.body||{};
  if(!['vip','life'].includes(plan)||!userId||!email||!payment)return res.status(400).json({message:'Dados do pagamento incompletos.'});
  const price=await getPrice(plan); const ref=externalRef(userId,plan);
- const method=String(payment.payment_method_id||payment.paymentMethodId||'').toLowerCase();
+ const method=String(payment.payment_method_id||req.body?.selectedPaymentMethod||'').toLowerCase();
  if(!method)return res.status(400).json({message:'Forma de pagamento não identificada.'});
  const payer={email:String(email).toLowerCase()};
  if(payment.payer?.identification?.type && payment.payer?.identification?.number){payer.identification=payment.payer.identification;}
@@ -76,7 +73,8 @@ app.post('/payments/process',async(req,res)=>{try{
  }
  // Pix ou Vitalício com cartão: pagamento único via /v1/payments.
  const body={transaction_amount:price,description:plan==='life'?'Curso da Passada — Acesso Vitalício':'Curso da Passada — VIP (30 dias)',payment_method_id:method,payer,external_reference:ref};
- if(method==='pix'){
+ if(method==='pix' || method==='pix_bank_transfer'){
+   body.payment_method_id='pix';
    body.payment_type_id='bank_transfer';
  }else{
    if(!payment.token)return res.status(400).json({message:'Não foi possível tokenizar o cartão. Tente novamente.'});
@@ -93,6 +91,8 @@ app.post('/payments/process',async(req,res)=>{try{
 
 app.get('/payments/status/:id',async(req,res)=>{try{
  const id=encodeURIComponent(req.params.id); const p=await mp('/v1/payments/'+id);
+ // Se já estiver aprovado, sincroniza imediatamente o acesso no Firebase.
+ if(p.status==='approved') await processPayment(id);
  res.json({id:String(p.id),status:p.status,status_detail:p.status_detail,external_reference:p.external_reference||null});
  }catch(e){res.status(e.status||500).json({message:e.message||'Não foi possível consultar o pagamento.'})}});
 

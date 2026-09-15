@@ -4,12 +4,18 @@ const crypto=require('crypto');
 const admin=require('firebase-admin');
 const app=express();
 app.use((req,res,next)=>{
+  // API pública para o PWA: permite chamadas do domínio do site e também
+  // de hospedagens estáticas/GitHub Pages. Não usamos cookies/credenciais.
   const origin=req.headers.origin;
-  const allowed=process.env.FRONTEND_URL||origin||'*';
-  res.setHeader('Access-Control-Allow-Origin',allowed);
-  res.setHeader('Vary','Origin');
+  if(origin){
+    res.setHeader('Access-Control-Allow-Origin',origin);
+    res.setHeader('Vary','Origin');
+  }else{
+    res.setHeader('Access-Control-Allow-Origin','*');
+  }
   res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Max-Age','86400');
   if(req.method==='OPTIONS') return res.sendStatus(204);
   next();
 });
@@ -30,7 +36,7 @@ function appUrl(req){return FRONTEND_URL||`${req.protocol}://${req.get('host')}`
 function externalRef(userId,plan){return `CDP-${plan}-${userId}-${Date.now()}`}
 async function getPrice(plan){const s=db();if(!s)throw new Error('Firebase Admin não configurado');const snap=await s.ref('course/settings').once('value');const v=snap.val()||{vipPrice:150,lifePrice:299.99};const price=Number(plan==='vip'?v.vipPrice:v.lifePrice);if(!Number.isFinite(price)||price<=0)throw new Error('Preço do plano inválido');return price}
 async function savePaymentUser(userId,data){const d=db();if(!d)throw new Error('Firebase Admin não configurado');await d.ref('course/users/'+userId).update(data)}
-app.get('/health',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',version:'11.1.0',mercadoPagoConfigured:!!MP_TOKEN,firebaseConfigured:!!db(),adminEmail:ADMIN_EMAIL}));
+app.get('/health',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',version:'11.1.1',mercadoPagoConfigured:!!MP_TOKEN,firebaseConfigured:!!db(),adminEmail:ADMIN_EMAIL}));
 app.post('/payments/create',async(req,res)=>{try{if(!MP_TOKEN||!db())return res.status(503).json({message:'Backend ainda não configurado no Render.'});const {plan,userId,email}=req.body||{};if(!['vip','life'].includes(plan)||!userId||!email)return res.status(400).json({message:'Dados do pagamento incompletos.'});const price=await getPrice(plan);const ref=externalRef(userId,plan);const base=appUrl(req);
  if(plan==='vip'){
    const sub=await mp('/preapproval',{method:'POST',body:JSON.stringify({reason:'Curso da Passada — Plano VIP',external_reference:ref,payer_email:String(email).toLowerCase(),auto_recurring:{frequency:1,frequency_type:'months',transaction_amount:price,currency_id:'BRL'},back_url:base,status:'pending'})});
@@ -45,5 +51,14 @@ async function processPayment(paymentId){const p=await mp('/v1/payments/'+paymen
 async function processSubscription(id){const s=await mp('/preapproval/'+encodeURIComponent(id));const ref=String(s.external_reference||'');const m=ref.match(/^CDP-vip-(.+?)-\d+$/);if(!m)return {ignored:true};const userId=m[1];if(s.status==='authorized'){let until=new Date(Date.now()+31*86400000);const snap=await db().ref('course/users/'+userId).once('value');const old=snap.val()||{};if(old.expiresAt&&new Date(old.expiresAt)>until)until=new Date(old.expiresAt);await savePaymentUser(userId,{plan:'vip',expiresAt:until.toISOString(),subscriptionId:String(id),lastSubscriptionStatus:s.status})}else if(['cancelled','canceled','paused'].includes(s.status)){await savePaymentUser(userId,{plan:'free',expiresAt:new Date(0).toISOString(),subscriptionId:String(id),lastSubscriptionStatus:s.status})}return {status:s.status,userId};}
 function verifyWebhook(req){if(!MP_WEBHOOK_SECRET)return true;const sig=req.get('x-signature')||'';const requestId=req.get('x-request-id')||'';const dataId=String(req.body?.data?.id||'');const ts=(sig.match(/ts=([^,]+)/)||[])[1];const v1=(sig.match(/v1=([^,]+)/)||[])[1];if(!ts||!v1||!dataId)return false;const manifest=`id:${dataId};request-id:${requestId};ts:${ts};`;const h=crypto.createHmac('sha256',MP_WEBHOOK_SECRET).update(manifest).digest('hex');return crypto.timingSafeEqual(Buffer.from(h),Buffer.from(v1));}
 app.post('/webhooks/mercadopago',async(req,res)=>{res.sendStatus(200);try{if(!verifyWebhook(req)){console.warn('Webhook Mercado Pago com assinatura inválida');return}const type=req.body?.type||req.body?.topic,id=req.body?.data?.id||req.body?.id;if(!id)return;if(type==='payment'||type==='merchant_order'||type==='payment.updated')await processPayment(id);else if(String(type).includes('subscription')||String(type).includes('preapproval'))await processSubscription(id);else {try{await processPayment(id)}catch{}try{await processSubscription(id)}catch{}}}catch(e){console.error('Webhook:',e.message)}});
-app.use(express.static(path.join(__dirname,'public')));app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
+// O Render é usado como API. Só serve o PWA se a pasta public existir.
+// Assim o backend não cai com ENOENT quando for publicado separado do site.
+const publicDir=path.join(__dirname,'public');
+const fs=require('fs');
+if(fs.existsSync(path.join(publicDir,'index.html'))){
+  app.use(express.static(publicDir));
+  app.get('*',(req,res)=>res.sendFile(path.join(publicDir,'index.html')));
+}else{
+  app.get('/',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',api:true,version:'11.1.1'}));
+}
 app.listen(PORT,()=>console.log(`Curso da Passada rodando na porta ${PORT}`));

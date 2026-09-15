@@ -26,3 +26,6 @@ Publique `firebase-rules.json` no Realtime Database. O cliente comum só acessa 
 
 ## IMPORTANTE
 O endpoint `https://backend-curso.onrender.com/health` precisa responder JSON. Se o Render estiver em 503, o serviço ainda não está disponível ou precisa de redeploy/configuração.
+
+
+Mercado Pago Checkout Transparente: configure no Render a variável MERCADO_PAGO_PUBLIC_KEY com a Public Key da mesma aplicação do Access Token.

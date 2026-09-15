@@ -1,39 +1,28 @@
-# Curso da Passada V11 — Firebase + ADM + Mercado Pago
+# Curso da Passada — versão 11.1.0
 
-## Estrutura
-- `public/` = PWA do curso.
-- `server.js` = backend para Mercado Pago + webhook.
-- `firebase-rules.json` = regras iniciais do Realtime Database.
+## SITE
+- Firebase: balanco-roupas-eeead
+- ADM: diel_zi_nho25@hotmail.com
+- Backend Render configurado no `public/config.js`:
+  `https://backend-curso.onrender.com`
 
-## ADM
-E-mail principal: `diel_zi_nho25@hotmail.com`
+## BACKEND / RENDER
+Build Command: `npm install`
+Start Command: `npm start`
 
-## Mercado Pago
-- Vitalício: Checkout Pro (Pix e cartão disponíveis no checkout).
-- VIP: assinatura mensal via `/preapproval`.
-- Webhook: `/webhooks/mercadopago`.
+Variáveis obrigatórias no Render:
+- `ADMIN_EMAIL=diel_zi_nho25@hotmail.com`
+- `FIREBASE_DATABASE_URL=https://balanco-roupas-eeead-default-rtdb.firebaseio.com`
+- `FIREBASE_SERVICE_ACCOUNT_JSON=...`
+- `MERCADO_PAGO_ACCESS_TOKEN=...`
+- `MERCADO_PAGO_WEBHOOK_SECRET=...` (recomendado)
+- `FRONTEND_URL=https://SEU-SITE` (recomendado quando o site estiver publicado separado)
 
-## Variáveis do Render
-`MERCADO_PAGO_ACCESS_TOKEN` = Access Token do Mercado Pago (não coloque no GitHub).
-`MERCADO_PAGO_WEBHOOK_SECRET` = chave secreta de Webhooks do Mercado Pago (recomendado).
-`FIREBASE_DATABASE_URL` = `https://balanco-roupas-eeead-default-rtdb.firebaseio.com`
-`FIREBASE_SERVICE_ACCOUNT_JSON` = JSON da conta de serviço do Firebase, em uma única variável.
-`FRONTEND_URL` = URL pública do próprio Render, opcional se o frontend for servido pelo mesmo serviço.
-`ADMIN_EMAIL` = `diel_zi_nho25@hotmail.com`
+Webhook Mercado Pago:
+`https://backend-curso.onrender.com/webhooks/mercadopago`
 
-## Primeiro acesso ADM
-1. Abra o site.
-2. Crie uma conta usando `diel_zi_nho25@hotmail.com` e uma senha.
-3. O sistema reconhece esse e-mail como ADM.
-4. Entre em Painel ADM > Vídeo-aulas.
-5. Cadastre título, acesso (Grátis/VIP/Vitalício) e URL do vídeo.
+## FIREBASE
+Publique `firebase-rules.json` no Realtime Database. O cliente comum só acessa o próprio perfil; somente o ADM lê `/course/users` inteiro.
 
-## Firebase
-Ative Authentication > Sign-in method > Email/Password.
-Depois publique as regras de `firebase-rules.json` no Realtime Database.
-
-## Mercado Pago
-No painel de desenvolvedores, pegue o Access Token de teste primeiro para testar. Em produção, troque pelo Access Token de produção no Render. Configure Webhooks para pagamentos e use a URL:
-`https://SEU-SERVICO.onrender.com/webhooks/mercadopago`
-
-Nunca coloque Access Token ou Service Account JSON no GitHub.
+## IMPORTANTE
+O endpoint `https://backend-curso.onrender.com/health` precisa responder JSON. Se o Render estiver em 503, o serviço ainda não está disponível ou precisa de redeploy/configuração.

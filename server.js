@@ -2,7 +2,18 @@ const express=require('express');
 const path=require('path');
 const crypto=require('crypto');
 const admin=require('firebase-admin');
-const app=express();app.use(express.json({limit:'1mb'}));
+const app=express();
+app.use((req,res,next)=>{
+  const origin=req.headers.origin;
+  const allowed=process.env.FRONTEND_URL||origin||'*';
+  res.setHeader('Access-Control-Allow-Origin',allowed);
+  res.setHeader('Vary','Origin');
+  res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');
+  if(req.method==='OPTIONS') return res.sendStatus(204);
+  next();
+});
+app.use(express.json({limit:'1mb'}));
 const PORT=process.env.PORT||10000;
 const FRONTEND_URL=(process.env.FRONTEND_URL||'').replace(/\/$/,'');
 const MP_TOKEN=process.env.MERCADO_PAGO_ACCESS_TOKEN||'';
@@ -19,7 +30,7 @@ function appUrl(req){return FRONTEND_URL||`${req.protocol}://${req.get('host')}`
 function externalRef(userId,plan){return `CDP-${plan}-${userId}-${Date.now()}`}
 async function getPrice(plan){const s=db();if(!s)throw new Error('Firebase Admin não configurado');const snap=await s.ref('course/settings').once('value');const v=snap.val()||{vipPrice:150,lifePrice:299.99};const price=Number(plan==='vip'?v.vipPrice:v.lifePrice);if(!Number.isFinite(price)||price<=0)throw new Error('Preço do plano inválido');return price}
 async function savePaymentUser(userId,data){const d=db();if(!d)throw new Error('Firebase Admin não configurado');await d.ref('course/users/'+userId).update(data)}
-app.get('/health',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',version:'11.0.0',mercadoPagoConfigured:!!MP_TOKEN,firebaseConfigured:!!db(),adminEmail:ADMIN_EMAIL}));
+app.get('/health',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',version:'11.1.0',mercadoPagoConfigured:!!MP_TOKEN,firebaseConfigured:!!db(),adminEmail:ADMIN_EMAIL}));
 app.post('/payments/create',async(req,res)=>{try{if(!MP_TOKEN||!db())return res.status(503).json({message:'Backend ainda não configurado no Render.'});const {plan,userId,email}=req.body||{};if(!['vip','life'].includes(plan)||!userId||!email)return res.status(400).json({message:'Dados do pagamento incompletos.'});const price=await getPrice(plan);const ref=externalRef(userId,plan);const base=appUrl(req);
  if(plan==='vip'){
    const sub=await mp('/preapproval',{method:'POST',body:JSON.stringify({reason:'Curso da Passada — Plano VIP',external_reference:ref,payer_email:String(email).toLowerCase(),auto_recurring:{frequency:1,frequency_type:'months',transaction_amount:price,currency_id:'BRL'},back_url:base,status:'pending'})});

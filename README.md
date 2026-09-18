@@ -29,3 +29,6 @@ O endpoint `https://backend-curso.onrender.com/health` precisa responder JSON. S
 
 
 Mercado Pago Checkout Transparente: configure no Render a variável MERCADO_PAGO_PUBLIC_KEY com a Public Key da mesma aplicação do Access Token.
+
+
+V11.2.4: corrigido o start_date da assinatura VIP. A data é enviada 10 minutos no futuro para evitar rejeição do Mercado Pago por considerar o timestamp atual já passado.

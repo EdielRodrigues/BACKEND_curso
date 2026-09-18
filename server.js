@@ -38,7 +38,7 @@ function externalRef(userId,plan){return `CDP-${plan}-${userId}-${Date.now()}`}
 function checkoutUrl(data){return String(data?.init_point||data?.sandbox_init_point||'').trim()}
 async function getPrice(plan){const s=db();if(!s)throw new Error('Firebase Admin não configurado');const snap=await s.ref('course/settings').once('value');const v=snap.val()||{vipPrice:150,lifePrice:299.99};const price=Number(plan==='vip'?v.vipPrice:v.lifePrice);if(!Number.isFinite(price)||price<=0)throw new Error('Preço do plano inválido');return price}
 async function savePaymentUser(userId,data){const d=db();if(!d)throw new Error('Firebase Admin não configurado');await d.ref('course/users/'+userId).update(data)}
-app.get('/health',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',version:'11.2.2',mercadoPagoConfigured:!!MP_TOKEN,mercadoPagoPublicKeyConfigured:!!MP_PUBLIC_KEY,firebaseConfigured:!!db(),adminEmail:ADMIN_EMAIL}));
+app.get('/health',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',version:'11.2.4',mercadoPagoConfigured:!!MP_TOKEN,mercadoPagoPublicKeyConfigured:!!MP_PUBLIC_KEY,firebaseConfigured:!!db(),adminEmail:ADMIN_EMAIL}));
 app.get('/payments/config',(req,res)=>res.json({publicKey:MP_PUBLIC_KEY}));
 app.post('/payments/create',async(req,res)=>{try{
  if(!MP_TOKEN||!db())return res.status(503).json({message:'Backend ainda não configurado no Render.'});
@@ -65,7 +65,7 @@ app.post('/payments/process',async(req,res)=>{try{
    if(!payment.token)return res.status(400).json({message:'Não foi possível tokenizar o cartão. Tente novamente.'});
    const sub=await mp('/preapproval',{method:'POST',body:JSON.stringify({
      reason:'Curso da Passada — Plano VIP',external_reference:ref,payer_email:payer.email,card_token_id:payment.token,
-     auto_recurring:{frequency:1,frequency_type:'months',start_date:new Date().toISOString(),transaction_amount:price,currency_id:'BRL'},
+     auto_recurring:{frequency:1,frequency_type:'months',start_date:new Date(Date.now()+10*60*1000).toISOString(),transaction_amount:price,currency_id:'BRL'},
      back_url:FRONTEND_URL||appUrl(req),status:'authorized'
    })});
    await savePaymentUser(userId,{pendingPlan:'vip',pendingReference:ref,subscriptionId:String(sub.id)});
@@ -98,13 +98,20 @@ app.get('/payments/status/:id',async(req,res)=>{try{
 
 app.get('/subscriptions/status/:id',async(req,res)=>{try{
  const id=encodeURIComponent(req.params.id); const s=await mp('/preapproval/'+id);
+ if(['authorized','cancelled','canceled','paused'].includes(String(s.status))) await processSubscription(String(s.id));
  res.json({id:String(s.id),status:s.status,external_reference:s.external_reference||null});
- }catch(e){res.status(e.status||500).json({message:e.message||'Não foi possível consultar a assinatura.'})}});
+ }catch(e){res.status(e.status||500).json({message:e.message||'Não foi possível consultar a assinatura.',details:e.data||null})}});
 
 async function processPayment(paymentId){const p=await mp('/v1/payments/'+paymentId);const ref=String(p.external_reference||'');const m=ref.match(/^CDP-(vip|life)-(.+?)-\d+$/);if(!m)return {ignored:true,reason:'external_reference não reconhecida'};const plan=m[1],userId=m[2];if(p.status==='approved'){const now=new Date();if(plan==='life'){await savePaymentUser(userId,{plan:'life',expiresAt:null,pendingPlan:null,pendingReference:null,lastPaymentId:String(p.id),lastPaymentStatus:p.status})}else{let until=new Date(now.getTime()+31*86400000);const snap=await db().ref('course/users/'+userId).once('value');const old=snap.val()||{};if(old.expiresAt&&new Date(old.expiresAt)>now)until=new Date(new Date(old.expiresAt).getTime()+31*86400000);await savePaymentUser(userId,{plan:'vip',expiresAt:until.toISOString(),pendingPlan:null,pendingReference:null,lastPaymentId:String(p.id),lastPaymentStatus:p.status})}}
  return {status:p.status,userId,plan};}
 async function processSubscription(id){const s=await mp('/preapproval/'+encodeURIComponent(id));const ref=String(s.external_reference||'');const m=ref.match(/^CDP-vip-(.+?)-\d+$/);if(!m)return {ignored:true};const userId=m[1];if(s.status==='authorized'){let until=new Date(Date.now()+31*86400000);const snap=await db().ref('course/users/'+userId).once('value');const old=snap.val()||{};if(old.expiresAt&&new Date(old.expiresAt)>until)until=new Date(old.expiresAt);await savePaymentUser(userId,{plan:'vip',expiresAt:until.toISOString(),subscriptionId:String(id),lastSubscriptionStatus:s.status})}else if(['cancelled','canceled','paused'].includes(s.status)){await savePaymentUser(userId,{plan:'free',expiresAt:new Date(0).toISOString(),subscriptionId:String(id),lastSubscriptionStatus:s.status})}return {status:s.status,userId};}
 function verifyWebhook(req){if(!MP_WEBHOOK_SECRET)return true;const sig=req.get('x-signature')||'';const requestId=req.get('x-request-id')||'';const dataId=String(req.body?.data?.id||'');const ts=(sig.match(/ts=([^,]+)/)||[])[1];const v1=(sig.match(/v1=([^,]+)/)||[])[1];if(!ts||!v1||!dataId)return false;const manifest=`id:${dataId};request-id:${requestId};ts:${ts};`;const h=crypto.createHmac('sha256',MP_WEBHOOK_SECRET).update(manifest).digest('hex');return crypto.timingSafeEqual(Buffer.from(h),Buffer.from(v1));}
+app.get('/payments/connection-test',async(req,res)=>{try{
+ if(!MP_TOKEN)return res.status(503).json({ok:false,message:'MERCADO_PAGO_ACCESS_TOKEN não configurado.'});
+ const r=await mp('/v1/payments/search?limit=1');
+ res.json({ok:true,mercadoPago:true,total:r.paging?.total??null});
+}catch(e){res.status(e.status||500).json({ok:false,mercadoPago:false,message:e.message,details:e.data||null})}});
+
 app.get('/payments/diagnostic',async(req,res)=>{res.json({online:true,mercadoPagoConfigured:!!MP_TOKEN,mercadoPagoPublicKeyConfigured:!!MP_PUBLIC_KEY,firebaseConfigured:!!db(),message:'Use o Payment Brick para gerar um token; nenhum dado de cartão é armazenado neste endpoint.'})});
 
 app.post('/webhooks/mercadopago',async(req,res)=>{res.sendStatus(200);try{if(!verifyWebhook(req)){console.warn('Webhook Mercado Pago com assinatura inválida');return}const type=req.body?.type||req.body?.topic,id=req.body?.data?.id||req.body?.id;if(!id)return;if(type==='payment'||type==='merchant_order'||type==='payment.updated')await processPayment(id);else if(String(type).includes('subscription')||String(type).includes('preapproval'))await processSubscription(id);else {try{await processPayment(id)}catch{}try{await processSubscription(id)}catch{}}}catch(e){console.error('Webhook:',e.message)}});
@@ -116,6 +123,6 @@ if(fs.existsSync(path.join(publicDir,'index.html'))){
   app.use(express.static(publicDir));
   app.get('*',(req,res)=>res.sendFile(path.join(publicDir,'index.html')));
 }else{
-  app.get('/',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',api:true,version:'11.2.2'}));
+  app.get('/',(req,res)=>res.json({online:true,service:'Curso da Passada Payments',api:true,version:'11.2.4'}));
 }
 app.listen(PORT,()=>console.log(`Curso da Passada rodando na porta ${PORT}`));

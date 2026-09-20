@@ -1,34 +1,38 @@
-# Curso da Passada — versão 11.1.0
+# Curso da Passada — Backend seguro v12.0.0
 
-## SITE
-- Firebase: balanco-roupas-eeead
-- ADM: diel_zi_nho25@hotmail.com
-- Backend Render configurado no `public/config.js`:
-  `https://backend-curso.onrender.com`
+Backend Express para autenticação e pagamentos do Curso da Passada.
 
-## BACKEND / RENDER
-Build Command: `npm install`
-Start Command: `npm start`
+## Variáveis obrigatórias no Render
 
-Variáveis obrigatórias no Render:
-- `ADMIN_EMAIL=diel_zi_nho25@hotmail.com`
-- `FIREBASE_DATABASE_URL=https://balanco-roupas-eeead-default-rtdb.firebaseio.com`
-- `FIREBASE_SERVICE_ACCOUNT_JSON=...`
-- `MERCADO_PAGO_ACCESS_TOKEN=...`
-- `MERCADO_PAGO_WEBHOOK_SECRET=...` (recomendado)
-- `FRONTEND_URL=https://SEU-SITE` (recomendado quando o site estiver publicado separado)
+- `FIREBASE_SERVICE_ACCOUNT_JSON`
+- `FIREBASE_DATABASE_URL`
+- `MERCADO_PAGO_ACCESS_TOKEN`
+- `MERCADO_PAGO_PUBLIC_KEY`
+- `ADMIN_EMAIL` (opcional; padrão: `diel_zi_nho25@hotmail.com`)
+- `FRONTEND_URL` (recomendado: `https://edielrodrigues.github.io/Curso-da-Passada`)
+- `MERCADO_PAGO_WEBHOOK_SECRET` (recomendado quando configurado no Mercado Pago)
 
-Webhook Mercado Pago:
-`https://backend-curso.onrender.com/webhooks/mercadopago`
+## Alteração obrigatória no frontend
 
-## FIREBASE
-Publique `firebase-rules.json` no Realtime Database. O cliente comum só acessa o próprio perfil; somente o ADM lê `/course/users` inteiro.
+As rotas `/payments/create`, `/payments/process`, `/payments/status/:id` e `/subscriptions/status/:id` agora exigem:
 
-## IMPORTANTE
-O endpoint `https://backend-curso.onrender.com/health` precisa responder JSON. Se o Render estiver em 503, o serviço ainda não está disponível ou precisa de redeploy/configuração.
+`Authorization: Bearer <Firebase ID Token>`
 
+O frontend deve obter o ID Token do Firebase Auth com `currentUser.getIdToken()` e enviá-lo nas chamadas ao backend. O `userId` e o e-mail não devem mais ser enviados como autoridade de identidade.
 
-Mercado Pago Checkout Transparente: configure no Render a variável MERCADO_PAGO_PUBLIC_KEY com a Public Key da mesma aplicação do Access Token.
+## Firebase Rules
 
+Importe `firebase-rules.json` no Realtime Database. As regras impedem que um usuário altere sozinho campos de plano/pagamento e limitam as aulas pagas a usuários com VIP válido ou Vitalício.
 
-V11.2.4: corrigido o start_date da assinatura VIP. A data é enviada 10 minutos no futuro para evitar rejeição do Mercado Pago por considerar o timestamp atual já passado.
+Para a aula gratuita, marque a aula de depoimento com `isFree: true` (ou `access: "free"`).
+
+## Segurança
+
+- Tokens de cartão nunca são armazenados no backend.
+- O backend verifica o Firebase ID Token.
+- O `uid` usado em pagamentos vem do token autenticado.
+- Referências de pagamento são vinculadas ao usuário e expiram após 30 minutos.
+- Consultas de pagamentos/assinaturas são vinculadas ao usuário autenticado.
+- CORS não aceita qualquer origem arbitrária.
+- Webhook aceita assinatura HMAC quando `MERCADO_PAGO_WEBHOOK_SECRET` estiver configurado.
+- Processamento aprovado atualiza o plano no Firebase Admin.

@@ -6,14 +6,15 @@
         ".write": "auth != null && auth.token.email == 'diel_zi_nho25@hotmail.com'"
       },
       "lessons": {
-        ".read": "auth != null",
-        ".write": "auth != null && auth.token.email == 'diel_zi_nho25@hotmail.com'"
+        "$lessonId": {
+          ".read": "auth != null && (auth.token.email == 'diel_zi_nho25@hotmail.com' || data.child('isFree').val() == true || data.child('access').val() == 'free' || root.child('course/users/' + auth.uid + '/plan').val() == 'life' || (root.child('course/users/' + auth.uid + '/plan').val() == 'vip' && root.child('course/users/' + auth.uid + '/expiresAtMs').val() > now))",
+          ".write": "auth != null && auth.token.email == 'diel_zi_nho25@hotmail.com'"
+        }
       },
       "users": {
-        ".read": "auth != null && auth.token.email == 'diel_zi_nho25@hotmail.com'",
         "$uid": {
           ".read": "auth != null && (auth.uid == $uid || auth.token.email == 'diel_zi_nho25@hotmail.com')",
-          ".write": "auth != null && (auth.uid == $uid || auth.token.email == 'diel_zi_nho25@hotmail.com')"
+          ".write": "auth != null && (auth.token.email == 'diel_zi_nho25@hotmail.com' || (auth.uid == $uid && newData.child('plan').val() == data.child('plan').val() && newData.child('expiresAtMs').val() == data.child('expiresAtMs').val() && newData.child('subscriptionId').val() == data.child('subscriptionId').val() && newData.child('lastPaymentId').val() == data.child('lastPaymentId').val() && newData.child('lastPaymentStatus').val() == data.child('lastPaymentStatus').val() && newData.child('pendingPlan').val() == data.child('pendingPlan').val() && newData.child('pendingReference').val() == data.child('pendingReference').val()))"
         }
       }
     }
